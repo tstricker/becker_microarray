@@ -1,0 +1,73 @@
+---
+title: "becker_microarry"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Becker microarray analysis
+
+```{r, message=FALSE, warning = FALSE}
+require(GEOquery)
+library(Biobase)
+```
+
+## Download GSE10161: aortic stenosis
+
+```{r, message=FALSE, warning = FALSE}
+gse <- getGEO("GSE10161",GSEMatrix=TRUE,AnnotGPL=TRUE)
+gse1=gse[[1]]
+show(gse)
+show(pData(phenoData(gse[[1]]))[1:5,c(1,6,8)])
+
+```
+make proper column names to match toptable 
+
+```{r, message=FALSE, warning = FALSE}
+fvarLabels(gse1) <- make.names(fvarLabels(gse1))
+
+```
+# log2 transform
+```{r}
+ex <- exprs(gse1)
+qx <- as.numeric(quantile(ex, c(0., 0.25, 0.5, 0.75, 0.99, 1.0), na.rm=T))
+LogC <- (qx[5] > 100) ||
+          (qx[6]-qx[1] > 50 && qx[2] > 0) ||
+          (qx[2] > 0 && qx[2] < 1 && qx[4] > 1 && qx[4] < 2)
+if (LogC) { ex[which(ex <= 0)] <- NaN
+  exprs(gse1) <- log2(ex) }
+```
+
+
+
+##differential expression wiht limma
+
+
+```{r,message=FALSE, warning = FALSE}
+require(limma)
+require(affy)
+```
+
+##setup design matrix
+
+```{r}
+con=length(grep("control*",unlist(pData(phenoData(gse1))[1])))
+control=rep(1,con)
+
+aos=length(grep("AOSl*",unlist(pData(phenoData(gse1))[1])))
+asten=rep(2,aos)
+
+design <- model.matrix(~ 0+factor(c(control,asten)))
+colnames(design) <- c("control", "AOS")
+fit <- lmFit(gse1, design)
+contrast.matrix <- makeContrasts(AOSvsControl=AOS-control, levels=design)
+fit2 <- contrasts.fit(fit, contrast.matrix)
+fit2 <- eBayes(fit2)
+topTable(fit2, coef=1, adjust="BH")
+all = topTable(fit2, coef=1, adjust="BH", number =22283)
+write.table(all,"~/becker_microarray/limma.de.table.txt", row.names = F, col.names = T, quote = F, sep = '\t')
+
+```
+
